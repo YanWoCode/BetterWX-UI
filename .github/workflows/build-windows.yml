@@ -1,0 +1,80 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    name: Build BetterWX-UI for Windows
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: pwsh
+
+    env:
+      CARGO_TERM_COLOR: always
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      # This repository currently has no package-lock.json / pnpm-lock.yaml / yarn.lock,
+      # so use npm install instead of npm ci.
+      - name: Install frontend dependencies
+        run: npm install
+
+      - name: Build Tauri app
+        run: npm run tauri-build
+
+      - name: Collect EXE files
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+
+          $portableExe = Get-ChildItem -Path "src-tauri\target\release" -Filter "*.exe" -File |
+            Where-Object { $_.Name -like "*BetterWX*" } |
+            Select-Object -First 1
+
+          if (-not $portableExe) {
+            Write-Host "Could not find BetterWX portable exe. Available exe files:"
+            Get-ChildItem -Path "src-tauri\target" -Filter "*.exe" -Recurse -File | ForEach-Object { $_.FullName }
+            throw "Portable exe was not generated."
+          }
+
+          Copy-Item -Path $portableExe.FullName -Destination "artifacts\BetterWX-UI-portable.exe" -Force
+
+          $bundlePath = "src-tauri\target\release\bundle"
+          if (Test-Path $bundlePath) {
+            Get-ChildItem -Path $bundlePath -Recurse -Include "*.exe", "*.msi" -File | ForEach-Object {
+              Copy-Item -Path $_.FullName -Destination (Join-Path "artifacts" $_.Name) -Force
+            }
+          }
+
+          Write-Host "Collected artifacts:"
+          Get-ChildItem -Path artifacts -File | ForEach-Object { $_.FullName }
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BetterWX-UI-windows-exe
+          path: artifacts/*
+          if-no-files-found: error
