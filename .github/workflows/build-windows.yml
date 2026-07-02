@@ -38,10 +38,13 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
-      # This repository currently has no package-lock.json / pnpm-lock.yaml / yarn.lock,
-      # so use npm install instead of npm ci.
       - name: Install frontend dependencies
         run: npm install
+
+      - name: Pin Tauri JavaScript packages to Rust crate versions
+        run: |
+          npm install --no-audit --no-fund --save-exact @tauri-apps/api@2.7.0 @tauri-apps/plugin-opener@2.4.0
+          npm install --no-audit --no-fund --save-dev --save-exact @tauri-apps/cli@2.7.0
 
       - name: Build Tauri app
         run: npm run tauri-build
